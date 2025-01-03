@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: react-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: react-frontend
+  template:
+    metadata:
+      labels:
+        app: react-frontend
+    spec:
+      containers:
+      - name: react-frontend
+        image: multimodalrag.azurecr.io/react-frontend:v1
+        ports:
+        - containerPort: 80
+        imagePullPolicy: Always
+        env:
+        # Optionally set environment variables if needed:
+        # - name: REACT_APP_BACKEND_URL
+        #   value: "http://4.227.76.55"
+      imagePullSecrets:
+      - name: acr-secret  # Must match the secret name you created for pulling from ACR
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: react-frontend-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: react-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
