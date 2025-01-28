@@ -1,78 +1,6 @@
-# Getting Started with Create React App
-
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
-
-## Available Scripts
-
-In the project directory, you can run:
-
-### `npm start`
-
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
-
-## Step-by-Step Guide to Implement React Frontend
+## Step-by-Step Guide to Implement React Frontend Using Azure App Service
 
 ### 1. Create a Dockerfile
-
 In your React project root (where `package.json` is), create a file named `Dockerfile`:
 
 ```dockerfile
@@ -98,7 +26,6 @@ CMD ["nginx", "-g", "daemon off;"]
 ---
 
 ### 2. Build and Test Locally
-
 1. Build the Docker image:
    ```powershell
    docker build -t react-frontend .
@@ -107,13 +34,12 @@ CMD ["nginx", "-g", "daemon off;"]
    ```powershell
    docker run -p 3000:80 react-frontend
    ```
-3. Open [http://localhost:3000](http://localhost:3000) in your browser to verify.
+3. Open http://localhost:3000 in your browser to verify the app.
 
 ---
 
 ### 3. Push the Image to Azure Container Registry (ACR)
-
-1. Log in to your Azure Container Registry (replace `multimodalrag` with your ACR name):
+1. Log in to your Azure Container Registry:
    ```powershell
    az acr login --name multimodalrag
    ```
@@ -128,90 +54,63 @@ CMD ["nginx", "-g", "daemon off;"]
 
 ---
 
-### 4. Deploy to Azure Kubernetes Service (AKS)
+### 4. Deploy to Azure App Service
 
-#### 4.1 Create Deployment and Service YAML
-
-Create a file named `react-frontend-deployment.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: react-frontend
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: react-frontend
-  template:
-    metadata:
-      labels:
-        app: react-frontend
-    spec:
-      containers:
-      - name: react-frontend
-        image: multimodalrag.azurecr.io/react-frontend:v1
-        ports:
-        - containerPort: 80
-        imagePullPolicy: Always
-        env:
-        # Optionally set environment variables if needed:
-        # - name: REACT_APP_BACKEND_URL
-        #   value: "http://4.227.76.55"
-      imagePullSecrets:
-      - name: acr-secret
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: react-frontend-service
-spec:
-  type: LoadBalancer
-  selector:
-    app: react-frontend
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
+#### 4.1 Create an App Service Plan
+```powershell
+az appservice plan create --name multi-modal-rag-plan --resource-group rg-genAI-sandbox --is-linux --sku F1
 ```
+(This creates a free-tier Linux plan named `multi-modal-rag-plan` in `rg-genAI-sandbox`.)
 
-#### 4.2 Apply the Deployment and Service
+#### 4.2 Create a Web App with Your Container Image
+```powershell
+az webapp create `
+  --resource-group rg-genAI-sandbox `
+  --plan multi-modal-rag-plan `
+  --name multi-modal-rag-frontend `
+  --deployment-container-image-name multimodalrag.azurecr.io/react-frontend:v1
+```
+Replace `multi-modal-rag-frontend` with your desired unique app name.
 
-1. Ensure your AKS credentials are set:
+#### 4.3 Configure Private Registry Credentials
+1. Retrieve ACR credentials:
    ```powershell
-   az aks get-credentials --resource-group rg-genAI-sandbox --name RAGMultiModalCluster
+   az acr credential show --name multimodalrag
    ```
-2. Apply the YAML file:
+   Note the `"username"` and one of the `"passwords"` from the output.
+2. Configure the container settings:
    ```powershell
-   kubectl apply -f react-frontend-deployment.yaml
+
+   $ACRPassword = (az acr credential show --name multimodalrag --query "passwords[0].value" -o tsv)
+   $ACRUsername = (az acr credential show --name multimodalrag --query "username" -o tsv)
+az webapp config container set `
+      --name multi-modal-rag-ui `
+      --resource-group rg-genAI-sandbox `
+      --docker-registry-server-url "https://multimodalrag.azurecr.io" `      
+      --docker-registry-server-user $ACRUsername `
+      --docker-registry-server-password $ACRPassword `
+      --docker-custom-image-name "multimodalrag.azurecr.io/react-frontend:v1"
    ```
 
-#### 4.3 Retrieve the External IP
-
-1. Run the following command:
-   ```powershell
-   kubectl get services
-   ```
-2. Look for `react-frontend-service` and note the `EXTERNAL-IP`. Open this IP in your browser to access the app.
+#### 4.4 Browse Your App
+```powershell
+az webapp browse --resource-group rg-genAI-sandbox --name multi-modal-rag-frontend
+```
+You can also open the URL https://multi-modal-rag-frontend.azurewebsites.net in your browser.
 
 ---
 
 ### 5. Update `App.js` If Necessary
-
-- If your React app fetches backend data, ensure the backend's IP or domain is correct:
-
-  ```js
-  const res = await fetch("http://4.227.76.55/query", { ... });
-  ```
-- To make this dynamic, use an environment variable:
-
-  ```js
-  const apiUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-  const res = await fetch(`${apiUrl}/query`, { ... });
-  ```
-
-- If the backend URL changes, rebuild the Docker image or use environment variables.
+If your React app fetches backend data, ensure the backend’s IP or domain is correct:
+```js
+const res = await fetch("http://YOUR_BACKEND_ENDPOINT/query", { ... });
+```
+You can also use an environment variable at build time:
+```js
+const apiUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const res = await fetch(`${apiUrl}/query`, { ... });
+```
+Rebuild your Docker image if you change this.
 
 ---
 
@@ -227,14 +126,16 @@ spec:
    ```
 3. **Push to ACR**:
    ```powershell
+   az acr login --name multimodalrag
    docker tag react-frontend multimodalrag.azurecr.io/react-frontend:v1
    docker push multimodalrag.azurecr.io/react-frontend:v1
    ```
-4. **Deploy to AKS**:
+4. **Deploy to Azure App Service**:
    ```powershell
-   kubectl apply -f react-frontend-deployment.yaml
-   kubectl get services
+   az appservice plan create --name multi-modal-rag-plan --resource-group rg-genAI-sandbox --is-linux --sku F1
+   az webapp create --resource-group rg-genAI-sandbox --plan multi-modal-rag-plan --name multi-modal-rag-frontend --deployment-container-image-name multimodalrag.azurecr.io/react-frontend:v1
+   az acr credential show --name multimodalrag
+   az webapp config container set --name multi-modal-rag-frontend --resource-group rg-genAI-sandbox --docker-registry-server-url "https://multimodalrag.azurecr.io" --docker-registry-server-user multimodalrag --docker-registry-server-password REPLACE_WITH_YOUR_ACR_PASSWORD --docker-custom-image-name "multimodalrag.azurecr.io/react-frontend:v1"
+   az webapp browse --resource-group rg-genAI-sandbox --name multi-modal-rag-frontend
    ```
-5. **Access via EXTERNAL-IP** from `kubectl get services`.
-
-Adjust `App.js` if needed (e.g., environment variables or updated backend endpoint).
+5. **Adjust `App.js`** if needed (e.g., environment variables or updated backend endpoint).

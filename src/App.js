@@ -1,20 +1,89 @@
 import React, { useState, useEffect } from "react";
+import { useMsal } from "@azure/msal-react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
 function App() {
+  const { instance, accounts } = useMsal();
+
+  // Load values from .env:
+  // Make sure you prefix environment variables with "REACT_APP_"
+  const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000/query";
+  const indexUrl = process.env.REACT_APP_INDEX_URL || "http://localhost:8000/index_new_documents";
+  const apiScope = process.env.REACT_APP_API_SCOPE;
+
+  // MSAL request object
+  const request = {
+    scopes: [apiScope, "openid", "profile"],
+  };
+
+  const [accessToken, setAccessToken] = useState("");
   const [query, setQuery] = useState("");
   const [responseText, setResponseText] = useState("");
   const [imageUrls, setImageUrls] = useState([]);
   const [isLoadingText, setIsLoadingText] = useState(false);
+  const [retrievedDocument, setRetrievedDocument] = useState("");
   const [isLoadingImages, setIsLoadingImages] = useState(false);
   const [dots, setDots] = useState("");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [totalResponseTime, setTotalResponseTime] = useState(0);
 
-  // Animate dots for "Generating..." states
+  // For the new indexing feature
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexingStatus, setIndexingStatus] = useState("");
+  const [documentSummary, setDocumentSummary] = useState(null);
+
+  // 1. Sign-in logic
+  const handleLogin = async () => {
+    try {
+      await instance.loginPopup(request);
+    } catch (err) {
+      console.error("Login failed:", err);
+    }
+  };
+
+  // 2. Acquire token (popup or silent)
+  const acquireToken = async () => {
+    try {
+      const response = await instance.acquireTokenPopup(request);
+      setAccessToken(response.accessToken);
+      console.log("Access Token:", response.accessToken);
+    } catch (err) {
+      console.error("Acquire token failed:", err);
+    }
+  };
+
+  // 2b. Refresh token (silent if possible, fallback to popup)
+  const handleRefreshToken = async () => {
+    try {
+      // Attempt silent token acquisition first
+      const silentResponse = await instance.acquireTokenSilent(request);
+      setAccessToken(silentResponse.accessToken);
+      console.log("Token refreshed silently:", silentResponse.accessToken);
+    } catch (err) {
+      // If silent fails, fallback to popup
+      console.warn("Silent token refresh failed, falling back to popup.");
+      try {
+        const popupResponse = await instance.acquireTokenPopup(request);
+        setAccessToken(popupResponse.accessToken);
+        console.log("Token refreshed via popup:", popupResponse.accessToken);
+      } catch (popupErr) {
+        console.error("Failed to refresh token:", popupErr);
+      }
+    }
+  };
+
+  // 3. If user is logged in, acquire a token on load
+  useEffect(() => {
+    if (accounts.length > 0) {
+      acquireToken();
+    }
+    // eslint-disable-next-line
+  }, [accounts]);
+
+  // 4. Loading-dots effect
   useEffect(() => {
     let interval;
     if (isLoadingText || isLoadingImages) {
@@ -29,19 +98,62 @@ function App() {
     };
   }, [isLoadingText, isLoadingImages]);
 
-  // Timer for response generation with milliseconds
+  // 5. Response timer
   useEffect(() => {
     let timerInterval;
     if (isLoadingText) {
       setElapsedTime(0);
       timerInterval = setInterval(() => {
-        setElapsedTime((prev) => prev + 10); // Update every 10 milliseconds
+        setElapsedTime((prev) => prev + 10);
       }, 10);
     }
     return () => {
       if (timerInterval) clearInterval(timerInterval);
     };
   }, [isLoadingText]);
+
+  // New function to handle indexing documents
+  const handleIndexNewDocuments = async () => {
+    if (!accessToken) {
+      alert("Please sign in first!");
+      return;
+    }
+
+    setIsIndexing(true);
+    setIndexingStatus("Indexing in progress...");
+    setDocumentSummary(null);
+
+    try {
+      const res = await fetch(indexUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        // The endpoint expects a QueryModel with `query`, but it's not really used
+        body: JSON.stringify({ query: "Indexing new documents" }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert(`Error: ${errorData.detail}`);
+        setIsIndexing(false);
+        setIndexingStatus("");
+        return;
+      }
+
+      const data = await res.json();
+      // This endpoint returns {"document_summary_dict": ...}
+      setDocumentSummary(data.document_summary_dict || {});
+      setIsIndexing(false);
+      setIndexingStatus("Documents indexed successfully!");
+    } catch (error) {
+      console.error("Error indexing documents:", error);
+      alert("Something went wrong while indexing documents.");
+      setIsIndexing(false);
+      setIndexingStatus("");
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,13 +162,17 @@ function App() {
     setResponseText("");
     setImageUrls([]);
     setTotalResponseTime(0);
+    setRetrievedDocument("");
 
     const startTime = Date.now();
 
     try {
-      const res = await fetch("http://4.227.76.55/query", {
+      const res = await fetch(apiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ query }),
       });
 
@@ -68,8 +184,8 @@ function App() {
       }
 
       const data = await res.json();
-
       setResponseText(data.response || "");
+      setRetrievedDocument(data.retrieved_document || "");
       setIsLoadingText(false);
 
       setIsLoadingImages(true);
@@ -86,7 +202,7 @@ function App() {
     }
   };
 
-  // Format elapsed time to include milliseconds
+  // Utility to format ms
   const formattedElapsedTime = (time) => {
     const seconds = Math.floor(time / 1000);
     const milliseconds = (time % 1000).toString().padStart(3, "0");
@@ -94,10 +210,51 @@ function App() {
   };
 
   return (
-    <div style={{ maxWidth: "600px", margin: "auto", padding: "1rem" }}>
+    <div style={{ width: "60%", margin: "auto", padding: "1rem" }}>
       <h1>Multi Modal RAG</h1>
 
-      {/* Form */}
+      {/* If no user is signed in, show a button to sign in */}
+      {accounts.length === 0 && (
+        <button onClick={handleLogin} style={{ marginBottom: "1rem" }}>
+          Sign In With Azure AD
+        </button>
+      )}
+
+      {/* If user is signed in, show user info, partial token, and a Refresh Token button */}
+      {accounts.length > 0 && (
+        <div style={{ marginBottom: "1rem" }}>
+          <p>Signed in as: {accounts[0].username}</p>
+          <p style={{ wordWrap: "break-word" }}>
+            Token (truncated): {accessToken.slice(0, 10)}...
+          </p>
+          <button onClick={handleRefreshToken} style={{ marginTop: "0.5rem" }}>
+            Refresh Token
+          </button>
+        </div>
+      )}
+
+      {/* Button to trigger indexing new documents */}
+      {accounts.length > 0 && (
+        <div style={{ marginBottom: "1rem" }}>
+          <button
+            onClick={handleIndexNewDocuments}
+            disabled={isIndexing || !accessToken}
+            style={{ padding: "0.5rem 1rem" }}
+          >
+            {isIndexing ? "Indexing..." : "Index New Documents"}
+          </button>
+          {indexingStatus && <p style={{ marginTop: "0.5rem" }}>{indexingStatus}</p>}
+          {documentSummary && Object.keys(documentSummary).length > 0 && (
+            <div style={{ marginTop: "1rem", background: "#f9f9f9", padding: "1rem" }}>
+              <h3>Document Summary:</h3>
+              <pre style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
+                {JSON.stringify(documentSummary, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: "1rem" }}>
           <label htmlFor="queryInput">Enter your query:</label>
@@ -110,12 +267,15 @@ function App() {
             style={{ width: "100%", padding: "0.5rem", marginTop: "0.5rem" }}
           />
         </div>
-        <button type="submit" style={{ padding: "0.5rem 1rem" }}>
+        <button
+          type="submit"
+          style={{ padding: "0.5rem 1rem" }}
+          disabled={!accessToken} // disable if no token yet
+        >
           Submit
         </button>
       </form>
 
-      {/* Generating Response Box */}
       {isLoadingText && (
         <div
           style={{
@@ -136,7 +296,6 @@ function App() {
         </div>
       )}
 
-      {/* Loading Images Box */}
       {isLoadingImages && (
         <div
           style={{
@@ -151,7 +310,6 @@ function App() {
         </div>
       )}
 
-      {/* Response Box */}
       {!isLoadingText && responseText && (
         <div
           style={{
@@ -162,16 +320,12 @@ function App() {
           }}
         >
           <h2>Response:</h2>
-          <ReactMarkdown
-            remarkPlugins={[remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-          >
+          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
             {responseText}
           </ReactMarkdown>
         </div>
       )}
 
-      {/* Total Response Time Box */}
       {!isLoadingText && !isLoadingImages && totalResponseTime > 0 && (
         <div
           style={{
@@ -191,7 +345,15 @@ function App() {
         </div>
       )}
 
-      {/* Sources Box */}
+      {!isLoadingText && retrievedDocument && (
+        <div style={{ marginTop: "1rem" }}>
+          <h2>Retrieved Document:</h2>
+          <a href={retrievedDocument} target="_blank" rel="noopener noreferrer">
+            View Document
+          </a>
+        </div>
+      )}
+
       {!isLoadingImages && imageUrls.length > 0 && (
         <div
           style={{
@@ -211,6 +373,7 @@ function App() {
           ))}
         </div>
       )}
+
     </div>
   );
 }
