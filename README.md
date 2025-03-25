@@ -58,19 +58,19 @@ CMD ["nginx", "-g", "daemon off;"]
 
 #### 4.1 Create an App Service Plan
 ```powershell
-az appservice plan create --name multi-modal-rag-plan --resource-group rg-genAI-sandbox --is-linux --sku F1
+az appservice plan create --name multimodalrag-frontend-plan --resource-group rg-genAI-sandbox --is-linux --sku B1 --location canadacentral
 ```
-(This creates a free-tier Linux plan named `multi-modal-rag-plan` in `rg-genAI-sandbox`.)
+(This creates a free-tier Linux plan named `multimodalrag-frontend-plan` in `rg-genAI-sandbox`.)
 
 #### 4.2 Create a Web App with Your Container Image
 ```powershell
 az webapp create `
   --resource-group rg-genAI-sandbox `
-  --plan multi-modal-rag-plan `
-  --name multi-modal-rag-frontend `
+  --plan multimodalrag-frontend-plan `
+  --name multimodalrag-frontend `
   --deployment-container-image-name multimodalrag.azurecr.io/react-frontend:v1
 ```
-Replace `multi-modal-rag-frontend` with your desired unique app name.
+Replace `multimodalrag-frontend` with your desired unique app name.
 
 #### 4.3 Configure Private Registry Credentials
 1. Retrieve ACR credentials:
@@ -80,11 +80,10 @@ Replace `multi-modal-rag-frontend` with your desired unique app name.
    Note the `"username"` and one of the `"passwords"` from the output.
 2. Configure the container settings:
    ```powershell
-
    $ACRPassword = (az acr credential show --name multimodalrag --query "passwords[0].value" -o tsv)
    $ACRUsername = (az acr credential show --name multimodalrag --query "username" -o tsv)
-az webapp config container set `
-      --name multi-modal-rag-ui `
+   az webapp config container set `
+      --name multimodalrag-frontend `
       --resource-group rg-genAI-sandbox `
       --docker-registry-server-url "https://multimodalrag.azurecr.io" `      
       --docker-registry-server-user $ACRUsername `
@@ -94,9 +93,9 @@ az webapp config container set `
 
 #### 4.4 Browse Your App
 ```powershell
-az webapp browse --resource-group rg-genAI-sandbox --name multi-modal-rag-frontend
+az webapp browse --resource-group rg-genAI-sandbox --name multimodalrag-frontend
 ```
-You can also open the URL https://multi-modal-rag-frontend.azurewebsites.net in your browser.
+You can also open the URL https://multimodalrag-frontend.azurewebsites.net in your browser.
 
 ---
 
@@ -111,31 +110,3 @@ const apiUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 const res = await fetch(`${apiUrl}/query`, { ... });
 ```
 Rebuild your Docker image if you change this.
-
----
-
-### Summary of Commands
-
-1. **Build Docker Image**:
-   ```powershell
-   docker build -t react-frontend .
-   ```
-2. **Test Locally**:
-   ```powershell
-   docker run -p 3000:80 react-frontend
-   ```
-3. **Push to ACR**:
-   ```powershell
-   az acr login --name multimodalrag
-   docker tag react-frontend multimodalrag.azurecr.io/react-frontend:v1
-   docker push multimodalrag.azurecr.io/react-frontend:v1
-   ```
-4. **Deploy to Azure App Service**:
-   ```powershell
-   az appservice plan create --name multi-modal-rag-plan --resource-group rg-genAI-sandbox --is-linux --sku F1
-   az webapp create --resource-group rg-genAI-sandbox --plan multi-modal-rag-plan --name multi-modal-rag-frontend --deployment-container-image-name multimodalrag.azurecr.io/react-frontend:v1
-   az acr credential show --name multimodalrag
-   az webapp config container set --name multi-modal-rag-frontend --resource-group rg-genAI-sandbox --docker-registry-server-url "https://multimodalrag.azurecr.io" --docker-registry-server-user multimodalrag --docker-registry-server-password REPLACE_WITH_YOUR_ACR_PASSWORD --docker-custom-image-name "multimodalrag.azurecr.io/react-frontend:v1"
-   az webapp browse --resource-group rg-genAI-sandbox --name multi-modal-rag-frontend
-   ```
-5. **Adjust `App.js`** if needed (e.g., environment variables or updated backend endpoint).

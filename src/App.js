@@ -10,8 +10,8 @@ function App() {
 
   // Load values from .env:
   // Make sure you prefix environment variables with "REACT_APP_"
-  const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000/query";
-  const indexUrl = process.env.REACT_APP_INDEX_URL || "http://localhost:8000/index_new_documents";
+  const apiUrl = process.env.REACT_APP_API_URL || "https://multimodalrag-backend.azurewebsites.net/query";
+  const indexUrl = process.env.REACT_APP_INDEX_URL || "https://multimodalrag-backend.azurewebsites.net/index_new_documents";
   const apiScope = process.env.REACT_APP_API_SCOPE;
 
   // MSAL request object
